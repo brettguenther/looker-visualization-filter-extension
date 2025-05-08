@@ -212,24 +212,6 @@ export const VizWithFilter = () => {
     console.log(`Looker Query Effect`);
     if (!hostname || !query?.id) return;
 
-    const pagePropertiesChangedHandler = (height, elementId) => {
-      console.log(`page properties changed`);
-      if (height && height > 100) {
-        const element = document.querySelector(
-          `#${elementId} iframe`
-        )
-        const filterElement = document.getElementById(`#field-filter`)
-
-        const fieldSelectMultiHeight = filterElement.offsetHeight;
-        console.log(`filterElement Height: ${fieldSelectMultiHeight}`)
-        console.log(`Height frame: ${fieldSelectMultiHeight}`)
-        const newIframeHeight = Math.max(0, height - fieldSelectMultiHeight);
-        if (element) {
-          element.style.height = `${newIframeHeight}px`
-        }
-      }
-    }
-
     const embedVisualization = async (queryId) => {
       try {
         embedInitialized.current = true;
