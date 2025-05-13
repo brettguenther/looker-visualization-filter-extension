@@ -12,12 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import React, { useEffect, useState, useContext, useRef } from 'react'
-import { Space, ComponentsProvider, SpaceVertical, FieldSelectMulti } from '@looker/components'
-import { getCore40SDK } from '@looker/extension-sdk-react'
-import { getEmbedSDK } from '@looker/embed-sdk';
-import { ExtensionContext40 } from '@looker/extension-sdk-react'
-import styled from 'styled-components'
+import React, { useEffect, useState, useContext, useRef } from "react";
+import {
+  Space,
+  ComponentsProvider,
+  SpaceVertical,
+  FieldSelectMulti,
+} from "@looker/components";
+import { getCore40SDK } from "@looker/extension-sdk-react";
+import { getEmbedSDK } from "@looker/embed-sdk";
+import { ExtensionContext40 } from "@looker/extension-sdk-react";
+import styled from "styled-components";
 
 const EmbedContainer = styled.div`
   width: 100%;
@@ -38,7 +43,13 @@ const CenteredSpan = styled.span`
 
 export const VizWithFilter = () => {
   const coreSDK = getCore40SDK();
-  const { visualizationData, lookerHostData, visualizationSDK, tileHostData, extensionSDK } = useContext(ExtensionContext40);
+  const {
+    visualizationData,
+    lookerHostData,
+    visualizationSDK,
+    tileHostData,
+    extensionSDK,
+  } = useContext(ExtensionContext40);
   const embedInitialized = useRef(false);
   const configInitialized = useRef(false);
   const [connection, setConnection] = useState(null);
@@ -52,27 +63,23 @@ export const VizWithFilter = () => {
   // Configuration options
   const vizDefaultConfig = {
     queryId: {
-      label: 'Query Id Source',
-      type: 'string'
+      label: "Query Id Source",
+      type: "string",
     },
     filterFieldReference: {
-      label: 'Filter Field Reference',
-      type: 'string'
+      label: "Filter Field Reference",
+      type: "string",
     },
     modelFilterField: {
-      label: 'Model Filter Field Reference',
-      type: 'string'
-    },
-    dashboardFilters: {
-      label: 'Dashboard Filters',
-      type: 'array'
+      label: "Model Filter Field Reference",
+      type: "string",
     }
   };
 
   // Dashboard Filter Mapping for cascading filters
   // TO DO: make a viz config?
   const dashboardFilterMap = {
-    "Product ID":"look_order_items_partitioned.product_id"
+    "Product ID": "look_order_items_partitioned.product_id",
   };
 
   // Filter options for the multi-select
@@ -81,27 +88,35 @@ export const VizWithFilter = () => {
   const fetchFilterOptions = async (modelName, viewName, fieldName) => {
     try {
       if (!viewName || !modelName || !fieldName) {
-        console.log('Missing required configuration to fetch filter options: queryId, modelFilterField or filterFieldReference');
+        console.log(
+          "Missing required configuration to fetch filter options: queryId, modelFilterField or filterFieldReference"
+        );
         return;
       }
-      const fieldSuggestions = await coreSDK.ok(coreSDK.model_fieldname_suggestions({model_name: modelName,view_name:viewName,field_name:fieldName}));
+      const fieldSuggestions = await coreSDK.ok(
+        coreSDK.model_fieldname_suggestions({
+          model_name: modelName,
+          view_name: viewName,
+          field_name: fieldName,
+        })
+      );
 
       if (!fieldSuggestions || !fieldSuggestions.suggestions) {
-        console.log('No suggestions returned from API');
+        console.log("No suggestions returned from API");
         setFilterOptions([]);
         return;
-      }      
+      }
       // Transform suggestions into the format expected by FieldSelectMulti
       const options = fieldSuggestions.suggestions
-        .filter(suggestion => suggestion != null) // Filter out null/undefined values
-        .map(suggestion => ({
+        .filter((suggestion) => suggestion != null) // Filter out null/undefined values
+        .map((suggestion) => ({
           value: String(suggestion), // Use String() instead of toString()
-          label: String(suggestion)
+          label: String(suggestion),
         }));
-      
+
       setFilterOptions(options);
     } catch (error) {
-      console.error('Error fetching filter options:', error);
+      console.error("Error fetching filter options:", error);
       setFilterOptions([]);
     }
   };
@@ -109,20 +124,32 @@ export const VizWithFilter = () => {
   // Handle visualization configuration changes
   useEffect(() => {
     if (!hostname) return;
-    
+
     console.log(`Looker VisConfig Effect`);
     const visConfig = visualizationData?.visConfig;
     console.log(`Current visConfig:`, JSON.stringify(visConfig));
 
     if (!configInitialized.current) {
-      console.log("setting default config")
+      console.log("setting default config");
       visualizationSDK.configureVisualization(vizDefaultConfig);
-      visualizationSDK.setVisConfig({"queryId":visConfig?.queryId,"filterFieldReference":visConfig?.filterFieldReference,"modelFilterField":visConfig?.modelFilterField,"dashboardFilters":visConfig?.dashboardFilters});
-      configInitialized.current = true
+      visualizationSDK.setVisConfig({
+        queryId: visConfig?.queryId,
+        filterFieldReference: visConfig?.filterFieldReference,
+        modelFilterField: visConfig?.modelFilterField,
+        dashboardFilters: visConfig?.dashboardFilters,
+      });
+      configInitialized.current = true;
     }
 
-    if (!visConfig || !visConfig?.queryId || !visConfig?.filterFieldReference || !visConfig?.modelFilterField) {
-      console.log('Missing required configuration: queryId, modelFilterField or filterFieldReference');
+    if (
+      !visConfig ||
+      !visConfig?.queryId ||
+      !visConfig?.filterFieldReference ||
+      !visConfig?.modelFilterField
+    ) {
+      console.log(
+        "Missing required configuration: queryId, modelFilterField or filterFieldReference"
+      );
       return;
     }
 
@@ -131,21 +158,97 @@ export const VizWithFilter = () => {
         console.log(`Attempting to fetch query with ID: ${visConfig.queryId}`);
         const queryInit = await coreSDK.ok(coreSDK.query(visConfig.queryId));
         console.log(`Successfully fetched query:`, queryInit);
-        setQuery(queryInit);
+
+        const queryFiltered = {};
+
+        const allowedKeys = [
+          "model",
+          "view",
+          "fields",
+          "pivots",
+          "fill_fields",
+          "filters",
+          "filter_expression",
+          "sorts",
+          "limit",
+          "column_limit",
+          "total",
+          "row_total",
+          "subtotals",
+          "vis_config",
+          "filter_config",
+          "visible_ui_sections",
+          "dynamic_fields",
+          "query_timezone",
+        ];
+
+        for (const key of allowedKeys) {
+          if (Object.prototype.hasOwnProperty.call(queryInit, key)) {
+            queryFiltered[key] = queryInit[key];
+          }
+        }
+
+        // Get dashboard filters if available
+        let dashboardFiltersListen = {};
+        if (tileHostData?.elementId) {
+          const cDashboardElement = await coreSDK.ok(
+            coreSDK.dashboard_element(tileHostData?.elementId)
+          );
+          const filterables = cDashboardElement.result_maker.filterables;
+
+          if (filterables && filterables.length > 0 && dashboardFilters) {
+            console.log(`Applying dashboard filters: ${JSON.stringify(dashboardFilters)}`);
+            
+            filterables.forEach(filterable => {
+              if (filterable.listen && filterable.listen.length > 0) {
+                filterable.listen.forEach(listenObj => {
+                  const dashboardFilterName = listenObj.dashboard_filter_name;
+                  const field = listenObj.field;
+                  
+                  if (dashboardFilters[dashboardFilterName] !== undefined) {
+                    console.log(
+                      `Mapping dashboard filter "${dashboardFilterName}" to field "${field}" with value "${dashboardFilters[dashboardFilterName]}"`
+                    );
+                    dashboardFiltersListen[field] = dashboardFilters[dashboardFilterName];
+                  }
+                });
+              }
+            });
+          }
+          console.log(`final filters to apply: ${JSON.stringify(dashboardFiltersListen)}`);
+        }
+
+        // Create new query with combined filters
+        const queryBody = {
+          ...queryFiltered,
+          filters: {
+            ...queryInit.filters,
+            ...dashboardFiltersListen
+          }
+        };
+
+        const newQuery = await coreSDK.ok(coreSDK.create_query(queryBody));
+        setQuery(newQuery);
 
         // Extract model, view, and field from filterFieldReference
         const model = visConfig.modelFilterField;
-        const [view, field] = visConfig?.filterFieldReference.split('.');
+        const [view, field] = visConfig?.filterFieldReference.split(".");
         if (model && view) {
-          console.log(`Fetching filter options for model: ${model}, view: ${view}, field: ${visConfig?.filterFieldReference}`);
-          await fetchFilterOptions(model, view, visConfig?.filterFieldReference);
+          console.log(
+            `Fetching filter options for model: ${model}, view: ${view}, field: ${visConfig?.filterFieldReference}`
+          );
+          await fetchFilterOptions(
+            model,
+            view,
+            visConfig?.filterFieldReference
+          );
         }
       } catch (error) {
-        console.error('Error initializing query:', error);
-        console.error('Error details:', {
+        console.error("Error initializing query:", error);
+        console.error("Error details:", {
           queryId: visConfig.queryId,
           errorType: error.type,
-          errorMessage: error.message
+          errorMessage: error.message,
         });
         setQuery(null);
       }
@@ -157,9 +260,9 @@ export const VizWithFilter = () => {
   // rendering done when connection is set to support PDF downloads
   useEffect(() => {
     if (visualizationData) {
-      extensionSDK.rendered()
+      extensionSDK.rendered();
     }
-  }, [connection])
+  }, [connection]);
 
   // Initialize Embed SDK with hostname
   useEffect(() => {
@@ -172,7 +275,10 @@ export const VizWithFilter = () => {
         getEmbedSDK().init(extractedHostname);
         setHostname(extractedHostname);
       } catch (error) {
-        console.error("Error parsing hostUrl or initializing Embed SDK:", error);
+        console.error(
+          "Error parsing hostUrl or initializing Embed SDK:",
+          error
+        );
       }
     }
   }, [lookerHostData]);
@@ -181,24 +287,39 @@ export const VizWithFilter = () => {
   useEffect(() => {
     console.log(`Looker Filter Effect`);
     const updateQueryWithFilters = async () => {
-      if (!query?.id || !visualizationData?.visConfig?.filterFieldReference) return;
+      if (!query?.id || !visualizationData?.visConfig?.filterFieldReference)
+        return;
       try {
         const queryInit = await coreSDK.ok(coreSDK.query(query.id));
 
-        const queryBody = {}
+        const queryBody = {};
 
         const allowedKeys = [
-          "model", "view", "fields", "pivots", "fill_fields", "filters",
-          "filter_expression", "sorts", "limit", "column_limit", "total",
-          "row_total", "subtotals", "vis_config", "filter_config",
-          "visible_ui_sections", "dynamic_fields", "query_timezone"
+          "model",
+          "view",
+          "fields",
+          "pivots",
+          "fill_fields",
+          "filters",
+          "filter_expression",
+          "sorts",
+          "limit",
+          "column_limit",
+          "total",
+          "row_total",
+          "subtotals",
+          "vis_config",
+          "filter_config",
+          "visible_ui_sections",
+          "dynamic_fields",
+          "query_timezone",
         ];
 
         for (const key of allowedKeys) {
           if (Object.prototype.hasOwnProperty.call(queryInit, key)) {
             queryBody[key] = queryInit[key];
           }
-        }  
+        }
 
         // Start with existing filters from queryInit
         const existingFilters = queryInit.filters || {};
@@ -206,28 +327,19 @@ export const VizWithFilter = () => {
 
         // Add/update filter selection
         if (filterSelection && filterSelection.length > 0) {
-          const filterValues = filterSelection.join(',');
+          const filterValues = filterSelection.join(",");
           console.log(`Applying filter values: ${filterValues}`);
-          combinedFilters[visualizationData?.visConfig?.filterFieldReference] = filterValues;
+          combinedFilters[visualizationData?.visConfig?.filterFieldReference] =
+            filterValues;
         } else {
-          delete combinedFilters[visualizationData?.visConfig?.filterFieldReference]
+          delete combinedFilters[
+            visualizationData?.visConfig?.filterFieldReference
+          ];
         }
 
-        // Add/update dashboard filters
-        if (dashboardFilterMap && Object.keys(dashboardFilterMap).length > 0 && dashboardFilters) {
-          console.log(`Applying dashboard filters: ${JSON.stringify(dashboardFilters)}`);
-          for (const [key, value] of Object.entries(dashboardFilters)) {
-            const mappedKey = dashboardFilterMap[key];
-            if (mappedKey && value !== null) {
-              console.log(`Mapping dashboard filter "${key}" to "${mappedKey}" with value "${value}"`);
-              combinedFilters[mappedKey] = value;
-            }
-          }
-        }
+        console.log(`combined filters: ${JSON.stringify(combinedFilters)}`);
 
-        console.log(`combined filters: ${JSON.stringify(combinedFilters)}`)
-  
-        queryBody.filters = combinedFilters; 
+        queryBody.filters = combinedFilters;
 
         const newQuery = await coreSDK.ok(coreSDK.create_query(queryBody));
         setQuery(newQuery);
@@ -236,12 +348,65 @@ export const VizWithFilter = () => {
           connection.loadQueryVisualization(newQuery.id);
         }
       } catch (error) {
-        console.error('Error updating query with filters:', error);
+        console.error("Error updating query with filters:", error);
       }
     };
 
     updateQueryWithFilters();
-  }, [filterSelection, visConfig?.filterFieldReference, dashboardFilters]);
+  }, [filterSelection, visConfig?.filterFieldReference]);
+
+  // dashboardFilters effect
+  useEffect(() => {
+    console.log(`Dashboard Filter Effect`);
+    const updateWithDashboardFilters = async () => {
+      try {
+        if (!dashboardFilters) return;
+        // if (!tileHostData?.dashboardId) return;
+        if (!tileHostData?.elementId) return;
+        // get current dashboard Filters
+        // const cDashboardFilters = await coreSDK.ok(coreSDK.dashboard_dashboard_filters(tileHostData?.dashboardId));
+        console.log(`getting dashboard element ${tileHostData?.elementId}`)
+        const cDashboardElement = await coreSDK.ok(
+          coreSDK.dashboard_element(tileHostData?.elementId)
+        );
+
+        // console.log(`dashboard element: ${JSON.stringify(cDashboardElement)}`)
+
+        const filterables = cDashboardElement.result_maker.filterables;
+
+        // console.log(`filterables: ${filterables}`);
+
+        // Initialize dashboardFiltersListen object
+        const dashboardFiltersListen = {};
+
+        if (filterables && filterables.length > 0 && dashboardFilters) {
+          console.log(`Applying dashboard filters: ${JSON.stringify(dashboardFilters)}`);
+          
+          // Iterate through each filterable object
+          filterables.forEach(filterable => {
+            if (filterable.listen && filterable.listen.length > 0) {
+              // Check each listen object in the filterable
+              filterable.listen.forEach(listenObj => {
+                const dashboardFilterName = listenObj.dashboard_filter_name;
+                const field = listenObj.field;
+                
+                if (dashboardFilters[dashboardFilterName] !== undefined) {
+                  console.log(
+                    `Mapping dashboard filter "${dashboardFilterName}" to field "${field}" with value "${dashboardFilters[dashboardFilterName]}"`
+                  );
+                  dashboardFiltersListen[field] = dashboardFilters[dashboardFilterName];
+                }
+              });
+            }
+          });
+        }
+        console.log(`final filters to apply: ${JSON.stringify(dashboardFiltersListen)}`)
+      } catch (error) {
+        console.error("Error updating query with dashboard filters:", error);
+      }
+    };
+    updateWithDashboardFilters();
+  }, [dashboardFilters]);
 
   // Handle embedding the visualization
   useEffect(() => {
@@ -256,9 +421,10 @@ export const VizWithFilter = () => {
         if (embedContainer) {
           embedContainer.innerHTML = "";
         }
-        const embed = getEmbedSDK().createQueryVisualizationWithId(queryId)
+        const embed = getEmbedSDK()
+          .createQueryVisualizationWithId(queryId)
           .appendTo("#looker-embed")
-          .withFrameBorder('0')
+          .withFrameBorder("0")
           .withDynamicIFrameHeight()
           .build()
           .connect()
@@ -266,25 +432,28 @@ export const VizWithFilter = () => {
             setConnection(conn);
           })
           .catch((error) => {
-            console.error('Error connecting to visualization:', error);
+            console.error("Error connecting to visualization:", error);
             embedInitialized.current = false;
           });
       } catch (error) {
-        console.error('Error embedding visualization:', error);
+        console.error("Error embedding visualization:", error);
         embedInitialized.current = false;
       }
     };
 
     if (connection) {
-      connection.loadQueryVisualization(query.id)
+      connection.loadQueryVisualization(query.id);
     } else {
-      embedVisualization(query.id)
+      embedVisualization(query.id);
     }
   }, [query]);
 
   const visConfig = visualizationData?.visConfig;
-  const hasRequiredConfig = visConfig?.queryId && visConfig?.filterFieldReference && visConfig?.modelFilterField;
-   
+  const hasRequiredConfig =
+    visConfig?.queryId &&
+    visConfig?.filterFieldReference &&
+    visConfig?.modelFilterField;
+
   // TO DO: make the filter type dynamic
   return (
     <ComponentsProvider>
@@ -299,11 +468,12 @@ export const VizWithFilter = () => {
             />
           ) : (
             <CenteredSpan>
-              Please configure a Query ID, Model and Filter Field Reference in the visualization settings
+              Please configure a Query ID, Model and Filter Field Reference in
+              the visualization settings
             </CenteredSpan>
           )}
         </Space>
-          <EmbedContainer id="looker-embed"></EmbedContainer>
+        <EmbedContainer id="looker-embed"></EmbedContainer>
       </SpaceVertical>
     </ComponentsProvider>
   );
