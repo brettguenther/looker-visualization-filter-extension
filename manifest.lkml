@@ -7,7 +7,7 @@ application: looker-extension-viz-filter {
   # file: "bundle.js"
   entitlements: {
     use_embeds: yes
-    core_api_methods: ["query","create_query"]
+    core_api_methods: ["query","create_query","model_fieldname_suggestions"]
   }
   mount_points: {
     dashboard_vis: yes

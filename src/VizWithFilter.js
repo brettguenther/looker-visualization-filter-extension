@@ -45,6 +45,7 @@ export const VizWithFilter = () => {
   const [query, setQuery] = useState(null);
   const [filterSelection, setFilterSelection] = useState([]);
   const [hostname, setHostname] = useState(null);
+  const [filterOptions, setFilterOptions] = useState([]);
 
   const { dashboardFilters } = tileHostData;
 
@@ -57,6 +58,14 @@ export const VizWithFilter = () => {
     filterFieldReference: {
       label: 'Filter Field Reference',
       type: 'string'
+    },
+    modelFilterField: {
+      label: 'Model Filter Field Reference',
+      type: 'string'
+    },
+    dashboardFilters: {
+      label: 'Dashboard Filters',
+      type: 'array'
     }
   };
 
@@ -68,62 +77,89 @@ export const VizWithFilter = () => {
 
   // Filter options for the multi-select
   // TO DO: make a api call based on filter field reference
-  const filterOptions = [
-    { value: 'Complete', label: 'Complete' },
-    { value: 'Processing', label: 'Processing' },
-    { value: 'Cancelled', label: 'Cancelled' },
-    { value: 'Shipped', label: 'Shipped' },
-    { value: 'Returned', label: 'Returned' }
-  ];
-
-    // Handle visualization configuration changes
-    useEffect(() => {
-      if (!hostname) return;
-      
-      console.log(`Looker VisConfig Effect`);
-      const visConfig = visualizationData?.visConfig;
-      console.log(`Current visConfig:`, JSON.stringify(visConfig));
-
-      if (!configInitialized.current) {
-        console.log("setting default config")
-        visualizationSDK.configureVisualization(vizDefaultConfig);
-        visualizationSDK.setVisConfig({"queryId":visConfig?.queryId,"filterFieldReference":visConfig?.filterFieldReference});
-        configInitialized.current = true
-      }
-
-      if (!visConfig || !visConfig?.queryId || !visConfig?.filterFieldReference) {
-        console.log('Missing required configuration: queryId or filterFieldReference');
-        // setQuery(null);
+  // Add this new function to fetch filter options
+  const fetchFilterOptions = async (modelName, viewName, fieldName) => {
+    try {
+      if (!viewName || !modelName || !fieldName) {
+        console.log('Missing required configuration to fetch filter options: queryId, modelFilterField or filterFieldReference');
         return;
       }
-  
-      const initializeQuery = async () => {
-        try {
-          console.log(`Attempting to fetch query with ID: ${visConfig.queryId}`);
-          const queryInit = await coreSDK.ok(coreSDK.query(visConfig.queryId));
-          console.log(`Successfully fetched query:`, queryInit);
-          setQuery(queryInit);
-        } catch (error) {
-          console.error('Error initializing query:', error);
-          console.error('Error details:', {
-            queryId: visConfig.queryId,
-            errorType: error.type,
-            errorMessage: error.message
-          });
-          setQuery(null);
+      const fieldSuggestions = await coreSDK.ok(coreSDK.model_fieldname_suggestions({model_name: modelName,view_name:viewName,field_name:fieldName}));
+
+      if (!fieldSuggestions || !fieldSuggestions.suggestions) {
+        console.log('No suggestions returned from API');
+        setFilterOptions([]);
+        return;
+      }      
+      // Transform suggestions into the format expected by FieldSelectMulti
+      const options = fieldSuggestions.suggestions
+        .filter(suggestion => suggestion != null) // Filter out null/undefined values
+        .map(suggestion => ({
+          value: String(suggestion), // Use String() instead of toString()
+          label: String(suggestion)
+        }));
+      
+      setFilterOptions(options);
+    } catch (error) {
+      console.error('Error fetching filter options:', error);
+      setFilterOptions([]);
+    }
+  };
+
+  // Handle visualization configuration changes
+  useEffect(() => {
+    if (!hostname) return;
+    
+    console.log(`Looker VisConfig Effect`);
+    const visConfig = visualizationData?.visConfig;
+    console.log(`Current visConfig:`, JSON.stringify(visConfig));
+
+    if (!configInitialized.current) {
+      console.log("setting default config")
+      visualizationSDK.configureVisualization(vizDefaultConfig);
+      visualizationSDK.setVisConfig({"queryId":visConfig?.queryId,"filterFieldReference":visConfig?.filterFieldReference,"modelFilterField":visConfig?.modelFilterField,"dashboardFilters":visConfig?.dashboardFilters});
+      configInitialized.current = true
+    }
+
+    if (!visConfig || !visConfig?.queryId || !visConfig?.filterFieldReference || !visConfig?.modelFilterField) {
+      console.log('Missing required configuration: queryId, modelFilterField or filterFieldReference');
+      return;
+    }
+
+    const initializeQuery = async () => {
+      try {
+        console.log(`Attempting to fetch query with ID: ${visConfig.queryId}`);
+        const queryInit = await coreSDK.ok(coreSDK.query(visConfig.queryId));
+        console.log(`Successfully fetched query:`, queryInit);
+        setQuery(queryInit);
+
+        // Extract model, view, and field from filterFieldReference
+        const model = visConfig.modelFilterField;
+        const [view, field] = visConfig?.filterFieldReference.split('.');
+        if (model && view) {
+          console.log(`Fetching filter options for model: ${model}, view: ${view}, field: ${visConfig?.filterFieldReference}`);
+          await fetchFilterOptions(model, view, visConfig?.filterFieldReference);
         }
-      };
-  
-      initializeQuery();
-    }, [visualizationData?.visConfig]);
-
-
-    // rendering done when connection is set to support PDF downloads
-    useEffect(() => {
-      if (visualizationData) {
-        extensionSDK.rendered()
+      } catch (error) {
+        console.error('Error initializing query:', error);
+        console.error('Error details:', {
+          queryId: visConfig.queryId,
+          errorType: error.type,
+          errorMessage: error.message
+        });
+        setQuery(null);
       }
-    }, [connection])
+    };
+
+    initializeQuery();
+  }, [visualizationData?.visConfig]);
+
+  // rendering done when connection is set to support PDF downloads
+  useEffect(() => {
+    if (visualizationData) {
+      extensionSDK.rendered()
+    }
+  }, [connection])
 
   // Initialize Embed SDK with hostname
   useEffect(() => {
@@ -205,7 +241,7 @@ export const VizWithFilter = () => {
     };
 
     updateQueryWithFilters();
-  }, [filterSelection, visualizationData?.visConfig?.filterFieldReference, dashboardFilters]);
+  }, [filterSelection, visConfig?.filterFieldReference, dashboardFilters]);
 
   // Handle embedding the visualization
   useEffect(() => {
@@ -247,14 +283,14 @@ export const VizWithFilter = () => {
   }, [query]);
 
   const visConfig = visualizationData?.visConfig;
-  const hasRequiredConfig = visConfig?.queryId && visConfig?.filterFieldReference;
+  const hasRequiredConfig = visConfig?.queryId && visConfig?.filterFieldReference && visConfig?.modelFilterField;
    
   // TO DO: make the filter type dynamic
   return (
     <ComponentsProvider>
       <SpaceVertical gap="none">
         <Space>
-          {visConfig?.filterFieldReference ? (
+          {hasRequiredConfig ? (
             <FieldSelectMulti
               options={filterOptions}
               onChange={setFilterSelection}
@@ -263,7 +299,7 @@ export const VizWithFilter = () => {
             />
           ) : (
             <CenteredSpan>
-              Please configure a Query ID and Filter Field Reference in the visualization settings
+              Please configure a Query ID, Model and Filter Field Reference in the visualization settings
             </CenteredSpan>
           )}
         </Space>
