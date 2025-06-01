@@ -18,6 +18,7 @@ import {
   ComponentsProvider,
   SpaceVertical,
   FieldSelectMulti,
+  FieldSelect
 } from "@looker/components";
 import { getCore40SDK } from "@looker/extension-sdk-react";
 import { getEmbedSDK } from "@looker/embed-sdk";
@@ -57,6 +58,8 @@ export const VizWithFilter = () => {
   const [filterSelection, setFilterSelection] = useState([]);
   const [hostname, setHostname] = useState(null);
   const [filterOptions, setFilterOptions] = useState([]);
+  const [filterDefault, setFilterDefault] = useState(null);
+  const [pdfImageSrc, setPdfImageSrc] = useState(null);
 
   const { dashboardFilters } = tileHostData;
 
@@ -74,17 +77,13 @@ export const VizWithFilter = () => {
       label: "Model Filter Field Reference",
       type: "string",
     }
-  };
-
-  // Dashboard Filter Mapping for cascading filters
-  // TO DO: make a viz config?
-  const dashboardFilterMap = {
-    "Product ID": "look_order_items_partitioned.product_id",
+    // ,defaultFilterValue: {
+    //   label: "Default Filter Value",
+    //   type: "string",
+    // }
   };
 
   // Filter options for the multi-select
-  // TO DO: make a api call based on filter field reference
-  // Add this new function to fetch filter options
   const fetchFilterOptions = async (modelName, viewName, fieldName) => {
     try {
       if (!viewName || !modelName || !fieldName) {
@@ -108,9 +107,9 @@ export const VizWithFilter = () => {
       }
       // Transform suggestions into the format expected by FieldSelectMulti
       const options = fieldSuggestions.suggestions
-        .filter((suggestion) => suggestion != null) // Filter out null/undefined values
+        .filter((suggestion) => suggestion != null)
         .map((suggestion) => ({
-          value: String(suggestion), // Use String() instead of toString()
+          value: String(suggestion),
           label: String(suggestion),
         }));
 
@@ -123,7 +122,7 @@ export const VizWithFilter = () => {
 
   // Handle visualization configuration changes
   useEffect(() => {
-    if (!hostname) return;
+    if (!hostname || lookerHostData?.isRendering) return;
 
     console.log(`Looker VisConfig Effect`);
     const visConfig = visualizationData?.visConfig;
@@ -215,7 +214,6 @@ export const VizWithFilter = () => {
               }
             });
           }
-          console.log(`final filters to apply: ${JSON.stringify(dashboardFiltersListen)}`);
         }
 
         // Create new query with combined filters
@@ -232,7 +230,7 @@ export const VizWithFilter = () => {
 
         // Extract model, view, and field from filterFieldReference
         const model = visConfig.modelFilterField;
-        const [view, field] = visConfig?.filterFieldReference.split(".");
+        const view = visConfig?.filterFieldReference.split(".")[0];
         if (model && view) {
           console.log(
             `Fetching filter options for model: ${model}, view: ${view}, field: ${visConfig?.filterFieldReference}`
@@ -258,15 +256,71 @@ export const VizWithFilter = () => {
   }, [visualizationData?.visConfig]);
 
   // rendering done when connection is set to support PDF downloads
+  // useEffect(() => {
+  //   if (visualizationData) {
+  //     extensionSDK.rendered();
+  //   }
+  // }, [connection]);
+  
   useEffect(() => {
-    if (visualizationData) {
-      extensionSDK.rendered();
+    let objectUrl = null; // To keep track of blob URL created in this effect run
+
+    const handlePdfRender = async () => {
+      console.log("Handling render new")
+      // todo: use the query object here, not the visConfig
+      if (lookerHostData?.isRendering && coreSDK && visualizationData?.visConfig) {
+        try {
+          // console.log("Attempting to render PDF image for query:", query.id);
+          const imageQueryResult = await coreSDK.ok(
+            // coreSDK.run_query({ query_id: "dd9PokcTAN2l0KZYiCvOpw", result_format: "png" })
+            coreSDK.run_query({ query_id: visualizationData?.visConfig?.queryId, result_format: "png" })
+          );
+
+          console.log(imageQueryResult);
+          // console.log(imageQueryResult.body);
+          // console.log(imageQueryResult.contentType);
+          
+          let imageSrcValue;
+          if (imageQueryResult instanceof Blob) {
+            objectUrl = URL.createObjectURL(imageQueryResult); // Store for cleanup
+            imageSrcValue = objectUrl.toString();
+          } else {
+            imageSrcValue = `data:${imageQueryResult.contentType};base64,${btoa(
+              imageQueryResult.body
+            )}`;
+          }
+          setPdfImageSrc(imageSrcValue);
+          extensionSDK.rendered();
+          console.log("PDF image rendered, src set.");
+        } catch (error) {
+          console.error("Error generating image for PDF:", error);
+          setPdfImageSrc(null); 
+          extensionSDK.rendered();
+        }
+      } 
+      // else {
+      //   // If not rendering PDF, or query/coreSDK not available, ensure pdfImageSrc is null
+      //   if (pdfImageSrc !== null) { 
+      //       setPdfImageSrc(null);
+      //       console.log("Exiting PDF render mode or missing query/sdk, clearing image src.");
+      //   }
+      // }
+    };
+
+    handlePdfRender();
+
+    return () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        console.log("Revoked object URL:", objectUrl);
+      }
     }
-  }, [connection]);
+  }, [visualizationData?.visConfig]); // pdfImageSrc added to ensure cleanup if it changes externally, though primarily driven by other deps.
 
   // Initialize Embed SDK with hostname
   useEffect(() => {
     console.log(`lookerHostData effect`);
+    if (lookerHostData?.isRendering) return;
     if (lookerHostData?.hostUrl) {
       try {
         const url = new URL(lookerHostData.hostUrl);
@@ -337,8 +391,6 @@ export const VizWithFilter = () => {
           ];
         }
 
-        console.log(`combined filters: ${JSON.stringify(combinedFilters)}`);
-
         queryBody.filters = combinedFilters;
 
         const newQuery = await coreSDK.ok(coreSDK.create_query(queryBody));
@@ -361,22 +413,14 @@ export const VizWithFilter = () => {
     const updateWithDashboardFilters = async () => {
       try {
         if (!dashboardFilters) return;
-        // if (!tileHostData?.dashboardId) return;
         if (!tileHostData?.elementId) return;
-        // get current dashboard Filters
-        // const cDashboardFilters = await coreSDK.ok(coreSDK.dashboard_dashboard_filters(tileHostData?.dashboardId));
-        console.log(`getting dashboard element ${tileHostData?.elementId}`)
+
         const cDashboardElement = await coreSDK.ok(
           coreSDK.dashboard_element(tileHostData?.elementId)
         );
 
-        // console.log(`dashboard element: ${JSON.stringify(cDashboardElement)}`)
-
         const filterables = cDashboardElement.result_maker.filterables;
 
-        // console.log(`filterables: ${filterables}`);
-
-        // Initialize dashboardFiltersListen object
         const dashboardFiltersListen = {};
 
         if (filterables && filterables.length > 0 && dashboardFilters) {
@@ -400,7 +444,6 @@ export const VizWithFilter = () => {
             }
           });
         }
-        console.log(`final filters to apply: ${JSON.stringify(dashboardFiltersListen)}`)
       } catch (error) {
         console.error("Error updating query with dashboard filters:", error);
       }
@@ -411,7 +454,7 @@ export const VizWithFilter = () => {
   // Handle embedding the visualization
   useEffect(() => {
     console.log(`Looker Query Effect`);
-    if (!hostname || !query?.id) return;
+    if (!hostname || !query?.id || lookerHostData?.isRendering) return;
 
     const embedVisualization = async (queryId) => {
       try {
@@ -448,11 +491,18 @@ export const VizWithFilter = () => {
     }
   }, [query]);
 
+  useEffect(() => {
+    if (visConfig?.defaultFilterValue) {
+      setFilterDefault(visConfig?.defaultFilterValue)
+    }
+  }, [visConfig?.defaultFilterValue]);
+
   const visConfig = visualizationData?.visConfig;
   const hasRequiredConfig =
     visConfig?.queryId &&
     visConfig?.filterFieldReference &&
     visConfig?.modelFilterField;
+    // && visConfig?.defaultFilterValue;
 
   // TO DO: make the filter type dynamic
   return (
@@ -466,6 +516,13 @@ export const VizWithFilter = () => {
               autoResize={true}
               id="field-filter"
             />
+            // <FieldSelect
+            //   name="t2" 
+            //   label="t2"
+            //   // defaultValue={filterDefault}
+            //   options={filterOptions}
+            //   onChange={setFilterSelection}
+            //   />
           ) : (
             <CenteredSpan>
               Please configure a Query ID, Model and Filter Field Reference in
@@ -473,7 +530,15 @@ export const VizWithFilter = () => {
             </CenteredSpan>
           )}
         </Space>
-        <EmbedContainer id="looker-embed"></EmbedContainer>
+        {pdfImageSrc ? (
+          <img 
+            src={pdfImageSrc} 
+            alt="Visualization Render" 
+            style={{ width: '100%', height: '90vh', objectFit: 'contain' }} 
+          />
+        ) : (
+          <EmbedContainer id="looker-embed"></EmbedContainer>
+        )}
       </SpaceVertical>
     </ComponentsProvider>
   );
